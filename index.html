@@ -1308,6 +1308,7 @@
               <button class="btn btn-ghost" onclick="document.getElementById('importFile').click()">⬇️ Import JSON</button>
               <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
               <button class="btn btn-danger" onclick="clearAllData()">🗑️ Clear All</button>
+              <button class="btn btn-ghost" onclick="resetStreak()" style="border-color:rgba(251,146,60,0.3);color:var(--accent-a);">🔥 Reset Streak</button>
             </div>
           </div>
         </div>
@@ -1371,6 +1372,13 @@
           <option>Dinner</option>
           <option>Snacks</option>
         </select>
+      </div>
+    </div>
+
+    </div>
+      <div class="form-group form-full">
+        <label class="form-label">Date (leave as today or pick a past date)</label>
+        <input id="foodDate" type="date" class="input" style="font-family:var(--font-mono)">
       </div>
     </div>
 
@@ -1574,6 +1582,8 @@ function openAddModal(prefillMeal) {
   document.getElementById('addModal').classList.add('open');
   document.getElementById('foodSearch').focus();
   if (prefillMeal) document.getElementById('mealType').value = prefillMeal;
+  const dateEl = document.getElementById('foodDate');
+  if (dateEl) dateEl.value = todayKey();
 }
 
 function closeAddModal() {
@@ -1587,6 +1597,8 @@ function clearFoodInputs() {
     if (el) el.value = '';
   });
   document.getElementById('foodQty').value = '1';
+  const dateEl = document.getElementById('foodDate');
+  if (dateEl) dateEl.value = todayKey();
 }
 
 /* ─────────────────────────────────────────────
@@ -1658,6 +1670,8 @@ function addFood() {
   const fats     = parseFloat(document.getElementById('foodFats').value)     || 0;
   const qty      = parseFloat(document.getElementById('foodQty').value)      || 1;
   const mealType = document.getElementById('mealType').value;
+  const foodDateEl = document.getElementById('foodDate');
+  const foodDate = (foodDateEl && foodDateEl.value) ? foodDateEl.value : todayKey();
 
   if (!name) { showToast('⚠️', 'Please enter a food name.'); return; }
 
@@ -1670,6 +1684,7 @@ function addFood() {
     carbs:    Math.round(carbs    * qty * 10) / 10,
     fats:     Math.round(fats     * qty * 10) / 10,
     mealType,
+    date: foodDate,
     timestamp: new Date().toISOString()
   };
 
@@ -1682,10 +1697,10 @@ function addFood() {
     if (recentFoods.length > 10) recentFoods.pop();
   }
 
-  // Update calorie history
-  const today = todayKey();
-  const total = getTodayTotals().calories + food.calories;
-  appState.calorieHistory[today] = total;
+  // Update calorie history for the food's actual date
+  appState.calorieHistory[foodDate] = appState.foods
+    .filter(f => (f.date || todayKey()) === foodDate)
+    .reduce((a, f) => a + f.calories, 0);
 
   saveData();
   closeAddModal();
@@ -1735,13 +1750,16 @@ function moveFoodToMeal(id, newMeal) {
    TOTALS
 ───────────────────────────────────────────── */
 function getTodayTotals() {
-  return appState.foods.reduce((acc, f) => {
-    acc.calories += f.calories;
-    acc.protein  += f.protein;
-    acc.carbs    += f.carbs;
-    acc.fats     += f.fats;
-    return acc;
-  }, { calories: 0, protein: 0, carbs: 0, fats: 0 });
+  const today = todayKey();
+  return appState.foods
+    .filter(f => (f.date || today) === today)
+    .reduce((acc, f) => {
+      acc.calories += f.calories;
+      acc.protein  += f.protein;
+      acc.carbs    += f.carbs;
+      acc.fats     += f.fats;
+      return acc;
+    }, { calories: 0, protein: 0, carbs: 0, fats: 0 });
 }
 
 /* ─────────────────────────────────────────────
@@ -1831,7 +1849,8 @@ function renderMealSummary() {
   if (!container) return;
 
   container.innerHTML = meals.map(meal => {
-    const foods = appState.foods.filter(f => f.mealType === meal);
+    const today = todayKey();
+    const foods = appState.foods.filter(f => f.mealType === meal && (f.date || today) === today);
     const cal = foods.reduce((a,f) => a + f.calories, 0);
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
@@ -2122,7 +2141,17 @@ function importData(event) {
   reader.readAsText(file);
 }
 
+function resetStreak() {
+  if (!confirm('Reset streak to 0? This cannot be undone.')) return;
+  appState.streak = 0;
+  appState.lastLoggedDate = null;
+  saveData();
+  document.getElementById('streakCount').textContent = '0';
+  showToast('🔥', 'Streak reset to 0');
+}
+
 function clearAllData() {
+  function clearAllData() {
   if (!confirm('Delete ALL data? This cannot be undone.')) return;
   appState.foods = [];
   appState.water = 0;
